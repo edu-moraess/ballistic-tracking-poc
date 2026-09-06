@@ -1,0 +1,33 @@
+{
+  "checkpoint": "35C",
+  "date": "2026-09-06",
+  "dataset": {
+    "total_frames": 6300,
+    "events": 11,
+    "window_length": 10,
+    "features": 9
+  },
+  "split": {
+    "train_windows": 1890,
+    "validation_windows": 774,
+    "test_windows": 718
+  },
+  "model": {
+    "type": "GRU Autoencoder",
+    "encoder_units": 32,
+    "latent_dim": 16,
+    "decoder_units": 32,
+    "parameters": 9753
+  },
+  "integrity": {
+    "missing_artifacts": [],
+    "empty_artifacts": [],
+    "shape_failures": [],
+    "sha256": {
+      "temporal_dataset_split_T10.npz": "4d97a917f8d71bd311f41c380876d0eb7fe3202b54cac6c358bad570afc1e693",
+      "gru_multievent_autoencoder.keras": "cca30072786d89dcac2a0dce01a84110e479241f78ecd3305f65489f14260d7e",
+      "checkpoint35_final_quantitative_summary.csv": "d7728e3d174146236a39c8a78232da8082658ba53b3feca55dc4b99fced4178d",
+      "checkpoint35_final_report.md": "db2e22781a104293089b0fbe1b0397a79a721e9e182385e094fcf3008928f0e2"
+    }
+  }
+}
