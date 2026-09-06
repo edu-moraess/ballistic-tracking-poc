@@ -1,7 +1,8 @@
 """
 Ballistic Tracking — Sequence Explorer (visualization only).
 
-Primary source: upload of photron_frames.zip containing frame_000.png … frame_129.png.
+Primary source: upload of any .zip archive containing Photron PNG/JPG frames
+(e.g. frame_000.png … frame_129.png), searched recursively inside the archive.
 Optional fallback: local directory of PNGs if already present on disk.
 
 This app does not train YOLO, does not run the Kalman filter, and does not
@@ -88,12 +89,20 @@ def is_image_name(name: str) -> bool:
     return Path(name).suffix.lower() in IMAGE_SUFFIXES
 
 
+def _zip_entry_basename(filename: str) -> str:
+    """Normalize zip member path (/, \\) and return the file basename."""
+    normalized = filename.replace("\\", "/")
+    return Path(normalized).name
+
+
 @st.cache_data(show_spinner="Extracting ZIP…")
 def load_frames_from_zip(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
     """
-    Extract valid PNG/JPG/JPEG entries from a ZIP archive.
-    Returns list of (filename, raw_bytes) sorted by frame number.
-    Raises ValueError on corrupt ZIP or empty result.
+    Recursively collect valid PNG/JPG/JPEG entries from any ZIP archive
+    (any filename; nested folders allowed).
+
+    Returns list of (basename, raw_bytes) sorted by frame number
+    (frame_000 → frame_129). Raises ValueError on corrupt ZIP or no images.
     """
     try:
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
@@ -101,26 +110,50 @@ def load_frames_from_zip(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
         raise ValueError(f"Arquivo ZIP inválido ou corrompido: {exc}") from exc
 
     frames: List[Tuple[str, bytes]] = []
+    seen_names: set[str] = set()
+
     for info in zf.infolist():
         if info.is_dir():
             continue
-        # Use basename so nested folders still work
-        name = Path(info.filename).name
+
+        # Skip macOS resource forks / metadata
+        normalized = info.filename.replace("\\", "/")
+        if "/__MACOSX/" in f"/{normalized}/" or normalized.startswith("__MACOSX/"):
+            continue
+        if normalized.endswith("/"):
+            continue
+
+        name = _zip_entry_basename(normalized)
         if not name or name.startswith("."):
             continue
         if not is_image_name(name):
             continue
+
+        # Prefer first occurrence if the same basename appears in multiple folders
+        if name in seen_names:
+            continue
+
         try:
             data = zf.read(info)
         except Exception:
             continue
         if not data:
             continue
+
+        # Lightweight validation: must open as an image
+        try:
+            with Image.open(io.BytesIO(data)) as im:
+                im.verify()
+        except Exception:
+            continue
+
+        seen_names.add(name)
         frames.append((name, data))
 
     if not frames:
         raise ValueError(
-            "Nenhuma imagem PNG/JPG/JPEG válida encontrada dentro do ZIP."
+            "Nenhuma imagem PNG/JPG/JPEG válida encontrada dentro do ZIP "
+            "(incluindo subpastas)."
         )
 
     frames.sort(key=lambda item: natural_frame_key(item[0]))
@@ -159,14 +192,14 @@ def make_thumbnail(image: Image.Image, max_width: int) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
-# Source: ZIP upload (primary) / local directory (fallback)
+# Source: any ZIP upload (primary) / local directory (fallback)
 # ---------------------------------------------------------------------------
 st.sidebar.header("Source")
 
 uploaded_zip = st.sidebar.file_uploader(
-    "Upload photron_frames.zip",
+    "Upload ZIP with frames",
     type=["zip"],
-    help="ZIP contendo frame_000.png … frame_129.png",
+    help="Any .zip file; PNG/JPG/JPEG are collected recursively from the archive.",
 )
 
 frames: List[Tuple[str, bytes]] = []
@@ -197,9 +230,9 @@ if load_error:
 
 if not frames:
     st.info(
-        "Faça upload de **photron_frames.zip** na barra lateral.\n\n"
-        "O arquivo deve conter as imagens Photron "
-        "(`frame_000.png` … `frame_129.png`).\n\n"
+        "Faça upload de um arquivo **.zip** na barra lateral.\n\n"
+        "O ZIP pode ter qualquer nome. O app procura **recursivamente** "
+        "por imagens PNG/JPG/JPEG (ex.: `frame_000.png` … `frame_129.png`).\n\n"
         "As frames **não** estão versionadas no GitHub; "
         "o ZIP é a fonte principal deste viewer."
     )
@@ -263,7 +296,6 @@ for start in range(0, len(frames), columns):
                 st.image(thumb, width=thumb_w)
             except Exception:
                 st.write("—")
-            # Show short index label: 001, 002, …
             m = re.search(r"(\d+)", Path(fname).stem)
             label = f"{int(m.group(1)):03d}" if m else fname
             st.markdown(
