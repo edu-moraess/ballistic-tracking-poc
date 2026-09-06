@@ -38,6 +38,8 @@ def _is_skippable_member(name:str)->bool:
 
 def _is_image_member(name:str)->bool:return _basename(name).lower().endswith(IMAGE_EXTENSIONS)
 
+def _is_zip_name(name:str)->bool:return (name or "").lower().endswith(".zip")
+
 def natural_frame_key(name:str)->Tuple[int,str]:
     stem=name.rsplit(".",1)[0] if "." in name else name; m=re.search(r"(\d+)",stem)
     return (int(m.group(1)),name.lower()) if m else (10**9,name.lower())
@@ -76,7 +78,7 @@ def load_frames_from_zip(zip_bytes:bytes)->Tuple[List[Tuple[str,bytes]],Dict[str
         if not _validate_image_bytes(data):stats["unreadable"]+=1;continue
         seen.add(base);frames.append((base,data));stats["loaded"]+=1
     if not frames:
-        if stats["candidates"]==0:raise ValueError("ZIP_NO_IMAGES: nenhuma imagem PNG/JPG/JPEG foi encontrada no ZIP.")
+        if stats["candidates"]==0:raise ValueError("ZIP_NO_IMAGES: nenhuma imagem PNG/JPG/JPEG/WEBP/BMP foi encontrada no ZIP.")
         raise ValueError("ZIP_UNREADABLE_IMAGES: as imagens encontradas não puderam ser lidas.")
     frames.sort(key=lambda x:natural_frame_key(x[0]));return frames,stats
 
@@ -87,15 +89,31 @@ def make_thumbnail(image:Image.Image,max_width:int)->Image.Image:
     if image.width<=max_width:return image
     ratio=max_width/float(image.width);return image.resize((max_width,max(1,int(image.height*ratio))),Image.Resampling.BILINEAR)
 
+def _validate_video_bytes(data:bytes)->bool:
+    if not data:return False
+    try:
+        import cv2
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".video") as handle:
+            handle.write(data);handle.flush()
+            capture=cv2.VideoCapture(handle.name)
+            valid=capture.isOpened() and capture.get(cv2.CAP_PROP_FRAME_COUNT)>0
+            capture.release()
+            return bool(valid)
+    except Exception:return False
+
 def detect_media_kind(name:str,data:bytes)->str:
     lower=(name or "").lower()
-    if _looks_like_zip(data):return "zip"
+    if _is_zip_name(name) or _looks_like_zip(data):return "zip"
     if data.startswith(b"\x89PNG") or data.startswith(b"\xff\xd8\xff") or data.startswith(b"RIFF"):
         if _validate_image_bytes(data):return "image"
-    if data.startswith(b"\x00\x00\x00") and b"ftyp" in data[:64]:return "video"
-    if data.startswith(b"\x1aE\xdf\xa3"):return "video"
+    if data.startswith(b"\x00\x00\x00") and b"ftyp" in data[:64]:
+        return "video" if _validate_video_bytes(data) else "invalid_video"
+    if data.startswith(b"\x1aE\xdf\xa3"):
+        return "video" if _validate_video_bytes(data) else "invalid_video"
     if any(lower.endswith(x) for x in IMAGE_EXTENSIONS):return "image"
-    if any(lower.endswith(x) for x in VIDEO_EXTENSIONS):return "video"
+    if any(lower.endswith(x) for x in VIDEO_EXTENSIONS):
+        return "video" if _validate_video_bytes(data) else "invalid_video"
     if _validate_image_bytes(data):return "image"
     return "unknown"
 
@@ -106,9 +124,12 @@ st.markdown('</div>',unsafe_allow_html=True)
 if not uploads:
     st.info("Nenhuma mídia carregada. Envie PNG/JPG, um ZIP de frames ou um vídeo para iniciar a visualização.");st.stop()
 
-all_frames=[];videos=[];unknown=[];zip_sources=[]
+all_frames=[];videos=[];unknown=[];invalid_videos=[];empty_files=[];zip_sources=[]
 for uploaded in uploads:
-    data=uploaded.getvalue();kind=detect_media_kind(uploaded.name,data)
+    data=uploaded.getvalue()
+    if not data:
+        empty_files.append(uploaded.name);continue
+    kind=detect_media_kind(uploaded.name,data)
     if kind=="zip":
         try:frames,stats=load_frames_from_zip(data);all_frames.extend(frames);zip_sources.append(f"{uploaded.name} · {len(frames)} frames")
         except ValueError as exc:st.error(f"{uploaded.name}: {exc}")
@@ -116,14 +137,13 @@ for uploaded in uploads:
         if _validate_image_bytes(data):all_frames.append((_basename(uploaded.name),data))
         else:unknown.append(uploaded.name)
     elif kind=="video":videos.append((uploaded.name,data))
+    elif kind=="invalid_video":invalid_videos.append(uploaded.name)
     else:unknown.append(uploaded.name)
 
-seen_names=set();unique_frames=[]
-for name,data in all_frames:
-    key=(name.lower(),len(data))
-    if key not in seen_names:seen_names.add(key);unique_frames.append((name,data))
-all_frames=sorted(unique_frames,key=lambda x:natural_frame_key(x[0]))
-if unknown:st.warning("Não foi possível identificar: "+", ".join(unknown))
+all_frames=sorted(all_frames,key=lambda x:natural_frame_key(x[0]))
+if empty_files:st.warning("Arquivos vazios ignorados: "+", ".join(empty_files))
+if invalid_videos:st.error("Vídeos inválidos ou ilegíveis: "+", ".join(invalid_videos))
+if unknown:st.warning("Formato não suportado ou arquivo inválido: "+", ".join(unknown))
 
 stat_cols=st.columns(4)
 for col,(label,value) in zip(stat_cols,[("FRAMES",str(len(all_frames))),("VIDEOS",str(len(videos))),("SOURCES",str(len(uploads))),("MODE","VISUAL")]):
