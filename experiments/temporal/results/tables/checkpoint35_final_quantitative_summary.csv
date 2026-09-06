@@ -1,0 +1,10 @@
+split,model,mse,mae
+train,GRU,0.194812,0.266933
+train,Temporal Mean,0.272349,0.316405
+train,Persistence,0.542514,0.418221
+validation,GRU,0.361022,0.387953
+validation,Temporal Mean,0.329583,0.338956
+validation,Persistence,0.647562,0.446066
+test,GRU,0.335689,0.375370
+test,Temporal Mean,0.311101,0.333091
+test,Persistence,0.596576,0.428186
