@@ -154,7 +154,6 @@ def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dic
             f"ZIP_OPEN_FAILED: erro ao abrir o ZIP ({type(exc).__name__}: {exc})."
         ) from exc
 
-    # Force full central-directory read / basic integrity check
     try:
         bad = zf.testzip()
         if bad is not None:
@@ -164,15 +163,18 @@ def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dic
     except ValueError:
         raise
     except Exception:
-        # testzip can fail on some valid archives; continue and rely on per-file reads
         pass
 
     frames: List[Tuple[str, bytes]] = []
     seen: set = set()
+    sample_members: List[str] = []
 
     for info in zf.infolist():
         stats["members_total"] += 1
         member = info.filename
+
+        if len(sample_members) < 12:
+            sample_members.append(member)
 
         if info.is_dir() or _is_skippable_member(member):
             stats["skipped_meta"] += 1
@@ -203,18 +205,23 @@ def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dic
         stats["loaded"] += 1
 
     if not frames:
+        sample = ", ".join(repr(m) for m in sample_members[:8])
         if stats["candidates"] == 0:
             raise ValueError(
                 "ZIP_NO_IMAGES: o ZIP abriu, mas nenhuma entrada "
                 ".png/.jpg/.jpeg foi encontrada (incluindo subpastas). "
                 f"Membros totais={stats['members_total']}, "
-                f"metadados ignorados={stats['skipped_meta']}."
+                f"metadados ignorados={stats['skipped_meta']}. "
+                f"Exemplos de entradas no ZIP: [{sample}]. "
+                "Verifique se enviou o ZIP das frames Photron "
+                "(frame_000.png … frame_129.png) e não o ZIP do repositório GitHub."
             )
         raise ValueError(
             "ZIP_UNREADABLE_IMAGES: existem candidatas a imagem no ZIP, "
             "mas nenhuma pôde ser lida pelo PIL. "
             f"candidatas={stats['candidates']}, "
-            f"ilegíveis={stats['unreadable']}."
+            f"ilegíveis={stats['unreadable']}. "
+            f"Exemplos de entradas: [{sample}]."
         )
 
     frames.sort(key=lambda item: natural_frame_key(item[0]))
@@ -244,7 +251,10 @@ st.sidebar.header("Source")
 uploaded_zip = st.sidebar.file_uploader(
     "Upload ZIP with frames",
     type=["zip"],
-    help="Any .zip file; PNG/JPG/JPEG are collected recursively from the archive.",
+    help=(
+        "ZIP das frames Photron (frame_000.png … frame_129.png). "
+        "Qualquer nome de arquivo .zip. Não use o ZIP do repositório GitHub."
+    ),
 )
 
 frames: List[Tuple[str, bytes]] = []
@@ -269,11 +279,12 @@ if load_error:
 
 if not frames:
     st.info(
-        "Faça upload de um arquivo **.zip** na barra lateral.\n\n"
-        "O ZIP pode ter qualquer nome. O app procura **recursivamente** "
-        "por imagens PNG/JPG/JPEG (ex.: `frame_000.png` … `frame_129.png`).\n\n"
-        "As frames **não** estão versionadas no GitHub; "
-        "o ZIP é a fonte principal deste viewer."
+        "Faça upload do ZIP **das frames Photron** na barra lateral.\n\n"
+        "O arquivo deve conter `frame_000.png` … `frame_129.png` "
+        "(pode estar em subpastas; o nome do ZIP pode ser qualquer um).\n\n"
+        "**Não** envie o ZIP do repositório GitHub (`ballistic-tracking-poc.zip`) — "
+        "esse arquivo contém apenas código-fonte, sem as imagens.\n\n"
+        "As frames **não** estão versionadas no GitHub."
     )
     st.stop()
 
