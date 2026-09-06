@@ -1,0 +1,58 @@
+{
+  "status": "COMPLETED",
+  "generated_at_utc": "2026-09-06T02:55:24.058531+00:00",
+  "model_path": "models/best.pt",
+  "frame_count": 130,
+  "conf_threshold": 0.25,
+  "cv_positive_frames": 83,
+  "yolo_detected": 71,
+  "yolo_miss": 59,
+  "cv_linear_y": {
+    "y0": 754.3052036414294,
+    "v": -7.108235937820934,
+    "r2": 0.9997287640731262,
+    "rmse": 2.8980935979016507
+  },
+  "cv_quadratic_y": {
+    "y0": 744.5154245829367,
+    "v": -6.711969159235777,
+    "a_px_per_frame2": -0.006637870492688562,
+    "r2": 0.9998497699839247,
+    "rmse": 2.156836166787112
+  },
+  "delta_r2_y": 0.00012100591079855505,
+  "delta_rmse_y": 0.7412574311145388,
+  "yolo_linear_y": {
+    "r2": 0.9998660356727331,
+    "rmse": 1.7198005743586575,
+    "v": -7.095407239049836
+  },
+  "yolo_quadratic_y": {
+    "r2": 0.9999396205682781,
+    "rmse": 1.1545905976065765,
+    "a_px_per_frame2": -0.005887737557949194
+  },
+  "regions": {
+    "early_0_18": {"frames": 19, "yolo_miss": 19, "miss_rate": 1.0, "cv_positive": 2, "mean_cv_speed": 6.51277424558885},
+    "mid_19_87": {"frames": 69, "yolo_miss": 0, "miss_rate": 0.0, "cv_positive": 69, "mean_cv_speed": 6.953528274032359, "mean_abs_cv_ay": 0.2525180974538979},
+    "late_88_129": {"frames": 42, "yolo_miss": 40, "miss_rate": 0.9523809523809523, "cv_positive": 12, "mean_cv_speed": 7.058869558687725, "mean_abs_cv_ay": 0.467042002095115}
+  },
+  "miss_vs_detected": {
+    "cv_speed_miss_mean": 7.1075332564138645,
+    "cv_speed_detected_mean": 6.943320917333807,
+    "abs_ay_miss_mean": 0.5398659727967994,
+    "abs_ay_detected_mean": 0.2493406700314852,
+    "near_border_miss": 3,
+    "near_border_detected": 1
+  },
+  "largest_quadratic_residuals_frame_t": [106.0, 90.0, 94.0, 98.0, 89.0, 97.0, 95.0, 88.0],
+  "disclaimer": "CV centers are reference labels/auto-labels, not independent GT. Pixel units only. Apparent acceleration is not physical m/s^2.",
+  "plots_local": [
+    "artifacts/model_audit/trajectory_x.png",
+    "artifacts/model_audit/trajectory_y.png",
+    "artifacts/model_audit/linear_vs_quadratic.png",
+    "artifacts/model_audit/trajectory_residuals.png",
+    "artifacts/model_audit/confidence_vs_frame.png",
+    "artifacts/model_audit/miss_map.png"
+  ]
+}
