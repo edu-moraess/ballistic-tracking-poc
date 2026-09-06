@@ -1,9 +1,8 @@
 """
 Ballistic Tracking — Sequence Explorer (visualization only).
 
-Primary source: upload of any .zip archive containing Photron PNG/JPG frames
-(e.g. frame_000.png … frame_129.png), searched recursively inside the archive.
-Optional fallback: local directory of PNGs if already present on disk.
+Primary source: upload of any .zip archive containing Photron PNG/JPG frames.
+Images are discovered recursively inside the archive (no local filesystem scan).
 
 This app does not train YOLO, does not run the Kalman filter, and does not
 modify experimental results.
@@ -14,8 +13,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import streamlit as st
 from PIL import Image
@@ -66,121 +64,168 @@ st.subheader("Sequence Explorer")
 st.caption("Computer Vision × State Estimation · visualization only")
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (string-based; no filesystem dependency for ZIP contents)
 # ---------------------------------------------------------------------------
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
-LOCAL_CANDIDATES = [
-    Path("/content/drive/MyDrive/ballistic_tracking/extracted/photron"),
-    Path("data/extracted/photron"),
-    Path("data/photron"),
-    Path("extracted/photron"),
-]
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
+
+def _basename(member_name: str) -> str:
+    """Return file basename from a zip member path (handles / and \\)."""
+    name = member_name.replace("\\", "/")
+    if name.endswith("/"):
+        name = name[:-1]
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return name
+
+
+def _is_image_member(member_name: str) -> bool:
+    base = _basename(member_name).lower()
+    return base.endswith(IMAGE_EXTENSIONS)
+
+
+def _is_skippable_member(member_name: str) -> bool:
+    """Directories, macOS metadata, hidden files."""
+    norm = member_name.replace("\\", "/")
+    if not norm or norm.endswith("/"):
+        return True
+    if norm.startswith("__MACOSX/") or "/__MACOSX/" in norm:
+        return True
+    base = _basename(norm)
+    if not base or base.startswith(".") or base.startswith("._"):
+        return True
+    return False
 
 
 def natural_frame_key(name: str) -> Tuple[int, str]:
-    """frame_012.png → (12, name); unknown names sort last."""
-    m = re.search(r"(\d+)", Path(name).stem)
+    """frame_012.png → (12, name); names without digits sort last."""
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    m = re.search(r"(\d+)", stem)
     if m:
         return (int(m.group(1)), name.lower())
     return (10**9, name.lower())
 
 
-def is_image_name(name: str) -> bool:
-    return Path(name).suffix.lower() in IMAGE_SUFFIXES
-
-
-def _zip_entry_basename(filename: str) -> str:
-    """Normalize zip member path (/, \\) and return the file basename."""
-    normalized = filename.replace("\\", "/")
-    return Path(normalized).name
-
-
-@st.cache_data(show_spinner="Extracting ZIP…")
-def load_frames_from_zip(zip_bytes: bytes) -> List[Tuple[str, bytes]]:
+def _validate_image_bytes(data: bytes) -> bool:
     """
-    Recursively collect valid PNG/JPG/JPEG entries from any ZIP archive
-    (any filename; nested folders allowed).
-
-    Returns list of (basename, raw_bytes) sorted by frame number
-    (frame_000 → frame_129). Raises ValueError on corrupt ZIP or no images.
+    Return True if data is a readable raster image.
+    Uses verify() then relies on original bytes for later display reopen.
     """
+    if not data or len(data) < 24:
+        return False
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im.verify()
+        # verify() leaves the image in an unusable state; reopen + load
+        with Image.open(io.BytesIO(data)) as im:
+            im.load()
+        return True
+    except Exception:
+        return False
+
+
+@st.cache_data(show_spinner="Extracting ZIP…", ttl=3600)
+def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dict[str, int]]:
+    """
+    Read any ZIP from bytes and collect valid PNG/JPG/JPEG members recursively.
+
+    Returns
+    -------
+    frames : list of (basename, raw_bytes), sorted frame_000 → frame_129
+    stats  : diagnostic counters
+    """
+    stats: Dict[str, int] = {
+        "members_total": 0,
+        "skipped_meta": 0,
+        "candidates": 0,
+        "unreadable": 0,
+        "duplicates": 0,
+        "loaded": 0,
+    }
+
     try:
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
     except zipfile.BadZipFile as exc:
-        raise ValueError(f"Arquivo ZIP inválido ou corrompido: {exc}") from exc
+        raise ValueError(
+            f"ZIP_OPEN_FAILED: não foi possível abrir o arquivo como ZIP ({exc})."
+        ) from exc
+    except Exception as exc:
+        raise ValueError(
+            f"ZIP_OPEN_FAILED: erro ao abrir o ZIP ({type(exc).__name__}: {exc})."
+        ) from exc
+
+    # Force full central-directory read / basic integrity check
+    try:
+        bad = zf.testzip()
+        if bad is not None:
+            raise ValueError(
+                f"ZIP_CORRUPT: entrada corrompida detectada no ZIP: {bad}."
+            )
+    except ValueError:
+        raise
+    except Exception:
+        # testzip can fail on some valid archives; continue and rely on per-file reads
+        pass
 
     frames: List[Tuple[str, bytes]] = []
-    seen_names: set[str] = set()
+    seen: set = set()
 
     for info in zf.infolist():
-        if info.is_dir():
+        stats["members_total"] += 1
+        member = info.filename
+
+        if info.is_dir() or _is_skippable_member(member):
+            stats["skipped_meta"] += 1
             continue
 
-        # Skip macOS resource forks / metadata
-        normalized = info.filename.replace("\\", "/")
-        if "/__MACOSX/" in f"/{normalized}/" or normalized.startswith("__MACOSX/"):
-            continue
-        if normalized.endswith("/"):
+        if not _is_image_member(member):
             continue
 
-        name = _zip_entry_basename(normalized)
-        if not name or name.startswith("."):
-            continue
-        if not is_image_name(name):
-            continue
+        stats["candidates"] += 1
+        base = _basename(member)
 
-        # Prefer first occurrence if the same basename appears in multiple folders
-        if name in seen_names:
+        if base in seen:
+            stats["duplicates"] += 1
             continue
 
         try:
             data = zf.read(info)
         except Exception:
-            continue
-        if not data:
-            continue
-
-        # Lightweight validation: must open as an image
-        try:
-            with Image.open(io.BytesIO(data)) as im:
-                im.verify()
-        except Exception:
+            stats["unreadable"] += 1
             continue
 
-        seen_names.add(name)
-        frames.append((name, data))
+        if not _validate_image_bytes(data):
+            stats["unreadable"] += 1
+            continue
+
+        seen.add(base)
+        frames.append((base, data))
+        stats["loaded"] += 1
 
     if not frames:
+        if stats["candidates"] == 0:
+            raise ValueError(
+                "ZIP_NO_IMAGES: o ZIP abriu, mas nenhuma entrada "
+                ".png/.jpg/.jpeg foi encontrada (incluindo subpastas). "
+                f"Membros totais={stats['members_total']}, "
+                f"metadados ignorados={stats['skipped_meta']}."
+            )
         raise ValueError(
-            "Nenhuma imagem PNG/JPG/JPEG válida encontrada dentro do ZIP "
-            "(incluindo subpastas)."
+            "ZIP_UNREADABLE_IMAGES: existem candidatas a imagem no ZIP, "
+            "mas nenhuma pôde ser lida pelo PIL. "
+            f"candidatas={stats['candidates']}, "
+            f"ilegíveis={stats['unreadable']}."
         )
 
     frames.sort(key=lambda item: natural_frame_key(item[0]))
-    return frames
-
-
-@st.cache_data(show_spinner="Loading local frames…")
-def load_frames_from_dir(dir_str: str) -> List[Tuple[str, bytes]]:
-    directory = Path(dir_str)
-    paths = [
-        p
-        for p in directory.iterdir()
-        if p.is_file() and is_image_name(p.name)
-    ]
-    paths.sort(key=lambda p: natural_frame_key(p.name))
-    return [(p.name, p.read_bytes()) for p in paths]
-
-
-def resolve_local_dir() -> Optional[Path]:
-    for candidate in LOCAL_CANDIDATES:
-        if candidate.is_dir():
-            return candidate
-    return None
+    return frames, stats
 
 
 def decode_image(data: bytes) -> Image.Image:
-    return Image.open(io.BytesIO(data)).convert("RGB")
+    """Reopen image bytes for display (safe after verify())."""
+    im = Image.open(io.BytesIO(data))
+    im.load()
+    return im.convert("RGB")
 
 
 def make_thumbnail(image: Image.Image, max_width: int) -> Image.Image:
@@ -192,7 +237,7 @@ def make_thumbnail(image: Image.Image, max_width: int) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
-# Source: any ZIP upload (primary) / local directory (fallback)
+# Source: any ZIP upload
 # ---------------------------------------------------------------------------
 st.sidebar.header("Source")
 
@@ -205,25 +250,19 @@ uploaded_zip = st.sidebar.file_uploader(
 frames: List[Tuple[str, bytes]] = []
 source_label = "none"
 load_error: Optional[str] = None
+stats: Dict[str, int] = {}
 
 if uploaded_zip is not None:
     try:
         zip_bytes = uploaded_zip.getvalue()
-        frames = load_frames_from_zip(zip_bytes)
+        if not zip_bytes:
+            raise ValueError("ZIP_EMPTY: o arquivo enviado está vazio (0 bytes).")
+        frames, stats = load_frames_from_zip(zip_bytes)
         source_label = f"ZIP · {uploaded_zip.name}"
     except ValueError as exc:
         load_error = str(exc)
     except Exception as exc:
-        load_error = f"Falha ao processar o ZIP: {type(exc).__name__}: {exc}"
-else:
-    local_dir = resolve_local_dir()
-    if local_dir is not None:
-        try:
-            frames = load_frames_from_dir(str(local_dir))
-            if frames:
-                source_label = f"local · {local_dir}"
-        except Exception as exc:
-            load_error = f"Falha ao ler diretório local: {exc}"
+        load_error = f"ZIP_ERROR: {type(exc).__name__}: {exc}"
 
 if load_error:
     st.error(load_error)
@@ -239,6 +278,12 @@ if not frames:
     st.stop()
 
 st.success(f"✓ {len(frames)} frames loaded")
+if uploaded_zip is not None:
+    st.caption(
+        f"Archive: `{uploaded_zip.name}` · "
+        f"images: {len(frames)} · "
+        f"members scanned: {stats.get('members_total', '?')}"
+    )
 st.sidebar.caption(f"Source: {source_label}")
 
 # ---------------------------------------------------------------------------
@@ -296,7 +341,7 @@ for start in range(0, len(frames), columns):
                 st.image(thumb, width=thumb_w)
             except Exception:
                 st.write("—")
-            m = re.search(r"(\d+)", Path(fname).stem)
+            m = re.search(r"(\d+)", fname.rsplit(".", 1)[0])
             label = f"{int(m.group(1)):03d}" if m else fname
             st.markdown(
                 f'<p class="frame-caption">[{label}]</p>',
