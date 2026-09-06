@@ -1,7 +1,13 @@
-pt
+# Python e Colab
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-extracted/
-runs/
+
+# Datasets pesados e arquivos brutos do estudo
 *.hdf5
+data/
+extracted/
+photron/
+runs/
+*.mp4
+!docs/demo_tracking.mp4
