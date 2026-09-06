@@ -4,6 +4,8 @@ Ballistic Tracking — Sequence Explorer (visualization only).
 Primary source: upload of any .zip archive containing Photron PNG/JPG frames.
 Images are discovered recursively inside the archive (no local filesystem scan).
 
+Mobile-friendly upload: validates ZIP by magic bytes (not only file extension).
+
 This app does not train YOLO, does not run the Kalman filter, and does not
 modify experimental results.
 """
@@ -107,16 +109,12 @@ def natural_frame_key(name: str) -> Tuple[int, str]:
 
 
 def _validate_image_bytes(data: bytes) -> bool:
-    """
-    Return True if data is a readable raster image.
-    Uses verify() then relies on original bytes for later display reopen.
-    """
+    """Return True if data is a readable raster image."""
     if not data or len(data) < 24:
         return False
     try:
         with Image.open(io.BytesIO(data)) as im:
             im.verify()
-        # verify() leaves the image in an unusable state; reopen + load
         with Image.open(io.BytesIO(data)) as im:
             im.load()
         return True
@@ -124,15 +122,20 @@ def _validate_image_bytes(data: bytes) -> bool:
         return False
 
 
+def _looks_like_zip(data: bytes) -> bool:
+    """ZIP local-file or empty-archive magic numbers."""
+    if len(data) < 4:
+        return False
+    # PK\x03\x04 (file), PK\x05\x06 (empty), PK\x07\x08 (spanned)
+    return data[0:2] == b"PK"
+
+
 @st.cache_data(show_spinner="Extracting ZIP…", ttl=3600)
 def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dict[str, int]]:
     """
     Read any ZIP from bytes and collect valid PNG/JPG/JPEG members recursively.
 
-    Returns
-    -------
-    frames : list of (basename, raw_bytes), sorted frame_000 → frame_129
-    stats  : diagnostic counters
+    Returns (frames, stats) with frames sorted frame_000 → frame_129.
     """
     stats: Dict[str, int] = {
         "members_total": 0,
@@ -141,24 +144,38 @@ def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dic
         "unreadable": 0,
         "duplicates": 0,
         "loaded": 0,
+        "bytes": len(zip_bytes),
     }
+
+    if not zip_bytes:
+        raise ValueError("ZIP_EMPTY: o arquivo enviado está vazio (0 bytes).")
+
+    if not _looks_like_zip(zip_bytes):
+        raise ValueError(
+            "ZIP_OPEN_FAILED: o conteúdo recebido não parece um arquivo ZIP "
+            f"(magic={zip_bytes[:4]!r}, tamanho={len(zip_bytes)} bytes). "
+            "No celular, apague o item vermelho, confirme o Wi‑Fi e envie "
+            "de novo um único photron_frames.zip."
+        )
 
     try:
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
     except zipfile.BadZipFile as exc:
         raise ValueError(
-            f"ZIP_OPEN_FAILED: não foi possível abrir o arquivo como ZIP ({exc})."
+            f"ZIP_OPEN_FAILED: não foi possível abrir como ZIP ({exc}). "
+            f"Bytes recebidos={len(zip_bytes)}. "
+            "Upload incompleto é comum em redes móveis — tente novamente no Wi‑Fi."
         ) from exc
     except Exception as exc:
         raise ValueError(
-            f"ZIP_OPEN_FAILED: erro ao abrir o ZIP ({type(exc).__name__}: {exc})."
+            f"ZIP_OPEN_FAILED: {type(exc).__name__}: {exc}"
         ) from exc
 
     try:
         bad = zf.testzip()
         if bad is not None:
             raise ValueError(
-                f"ZIP_CORRUPT: entrada corrompida detectada no ZIP: {bad}."
+                f"ZIP_CORRUPT: entrada corrompida no ZIP: {bad}."
             )
     except ValueError:
         raise
@@ -209,19 +226,16 @@ def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dic
         if stats["candidates"] == 0:
             raise ValueError(
                 "ZIP_NO_IMAGES: o ZIP abriu, mas nenhuma entrada "
-                ".png/.jpg/.jpeg foi encontrada (incluindo subpastas). "
-                f"Membros totais={stats['members_total']}, "
-                f"metadados ignorados={stats['skipped_meta']}. "
-                f"Exemplos de entradas no ZIP: [{sample}]. "
-                "Verifique se enviou o ZIP das frames Photron "
-                "(frame_000.png … frame_129.png) e não o ZIP do repositório GitHub."
+                ".png/.jpg/.jpeg foi encontrada. "
+                f"Membros={stats['members_total']}, "
+                f"meta={stats['skipped_meta']}. "
+                f"Exemplos: [{sample}]. "
+                "Envie o ZIP das frames Photron, não o ZIP do repositório GitHub."
             )
         raise ValueError(
-            "ZIP_UNREADABLE_IMAGES: existem candidatas a imagem no ZIP, "
-            "mas nenhuma pôde ser lida pelo PIL. "
-            f"candidatas={stats['candidates']}, "
-            f"ilegíveis={stats['unreadable']}. "
-            f"Exemplos de entradas: [{sample}]."
+            "ZIP_UNREADABLE_IMAGES: candidatas encontradas, mas nenhuma "
+            "foi legível pelo PIL. "
+            f"candidatas={stats['candidates']}, ilegíveis={stats['unreadable']}."
         )
 
     frames.sort(key=lambda item: natural_frame_key(item[0]))
@@ -229,7 +243,6 @@ def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dic
 
 
 def decode_image(data: bytes) -> Image.Image:
-    """Reopen image bytes for display (safe after verify())."""
     im = Image.open(io.BytesIO(data))
     im.load()
     return im.convert("RGB")
@@ -244,16 +257,24 @@ def make_thumbnail(image: Image.Image, max_width: int) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
-# Source: any ZIP upload
+# Source: ZIP upload (mobile-friendly)
 # ---------------------------------------------------------------------------
 st.sidebar.header("Source")
 
+st.sidebar.caption(
+    "Celular: envie **um** arquivo só, no Wi‑Fi se possível. "
+    "Apague itens vermelhos antes de tentar de novo."
+)
+
+# No strict extension filter — some mobile browsers report odd MIME types.
+# We validate ZIP content ourselves via magic bytes + zipfile.
 uploaded_zip = st.sidebar.file_uploader(
     "Upload ZIP with frames",
-    type=["zip"],
+    type=None,
+    accept_multiple_files=False,
     help=(
-        "ZIP das frames Photron (frame_000.png … frame_129.png). "
-        "Qualquer nome de arquivo .zip. Não use o ZIP do repositório GitHub."
+        "Arquivo ZIP com frame_000.png … frame_129.png. "
+        "No celular: um arquivo por vez, preferencialmente no Wi‑Fi."
     ),
 )
 
@@ -264,9 +285,31 @@ stats: Dict[str, int] = {}
 
 if uploaded_zip is not None:
     try:
+        # Read once into memory; show size for mobile debugging
         zip_bytes = uploaded_zip.getvalue()
-        if not zip_bytes:
-            raise ValueError("ZIP_EMPTY: o arquivo enviado está vazio (0 bytes).")
+        size_mb = len(zip_bytes) / (1024 * 1024)
+        st.sidebar.write(
+            f"Recebido: `{uploaded_zip.name}` · **{size_mb:.2f} MB** "
+            f"({len(zip_bytes)} bytes)"
+        )
+
+        if len(zip_bytes) < 100:
+            raise ValueError(
+                "ZIP_EMPTY: upload parece incompleto "
+                f"({len(zip_bytes)} bytes). Apague o item e envie de novo."
+            )
+
+        # Soft warning if name has no .zip (mobile sometimes strips / renames)
+        name_lower = (uploaded_zip.name or "").lower()
+        if name_lower and not (
+            name_lower.endswith(".zip")
+            or name_lower.endswith(".png")
+            or _looks_like_zip(zip_bytes)
+        ):
+            st.sidebar.warning(
+                "O arquivo não tem extensão .zip; tentando abrir mesmo assim…"
+            )
+
         frames, stats = load_frames_from_zip(zip_bytes)
         source_label = f"ZIP · {uploaded_zip.name}"
     except ValueError as exc:
@@ -276,15 +319,19 @@ if uploaded_zip is not None:
 
 if load_error:
     st.error(load_error)
+    st.warning(
+        "Dica (celular): remova os arquivos com ícone vermelho (X) → "
+        "conecte no Wi‑Fi → envie **apenas um** `photron_frames.zip` → "
+        "aguarde o upload terminar antes de tocar na tela."
+    )
 
 if not frames:
     st.info(
         "Faça upload do ZIP **das frames Photron** na barra lateral.\n\n"
-        "O arquivo deve conter `frame_000.png` … `frame_129.png` "
-        "(pode estar em subpastas; o nome do ZIP pode ser qualquer um).\n\n"
-        "**Não** envie o ZIP do repositório GitHub (`ballistic-tracking-poc.zip`) — "
-        "esse arquivo contém apenas código-fonte, sem as imagens.\n\n"
-        "As frames **não** estão versionadas no GitHub."
+        "O arquivo deve conter `frame_000.png` … `frame_129.png`.\n\n"
+        "**Não** envie o ZIP do repositório GitHub (`ballistic-tracking-poc.zip`).\n\n"
+        "No **celular**: um arquivo por vez, no Wi‑Fi, e apague itens vermelhos "
+        "antes de reenviar."
     )
     st.stop()
 
@@ -293,7 +340,8 @@ if uploaded_zip is not None:
     st.caption(
         f"Archive: `{uploaded_zip.name}` · "
         f"images: {len(frames)} · "
-        f"members scanned: {stats.get('members_total', '?')}"
+        f"members scanned: {stats.get('members_total', '?')} · "
+        f"bytes: {stats.get('bytes', '?')}"
     )
 st.sidebar.caption(f"Source: {source_label}")
 
