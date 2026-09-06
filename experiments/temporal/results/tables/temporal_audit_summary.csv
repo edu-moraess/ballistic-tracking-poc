@@ -1,0 +1,24 @@
+checkpoint,experimento,resultado,status
+01,YOLO conf=0.25,71 detections / 130 frames,concluído
+02,Features temporais,tracking features construídas,concluído
+03,Janelas temporais,"121 janelas, T=10, F=8",concluído
+04,Fases temporais,115 válidas / 6 ambíguas,concluído
+05,Dataset final,"115 × 10 × 8, sem NaN/Inf",concluído
+06,Baselines,majority / miss-ratio / regra temporal,concluído
+06A,Auditoria miss-ratio,separa degradação pós-miss; confunde pre-entry,concluído
+07,Miss-ratio histórico,não produz early warning antes do primeiro miss,concluído
+08,EWMA + persistência,alertas iniciais contaminados pelo estado inicial,concluído
+08A,Auditoria EWMA,estado inicial explica falso alerta,concluído
+09,Dataset GRU Autoencoder,19 sequências saudáveis para treino,concluído
+10,Treinamento GRU Autoencoder,9.495 parâmetros; train MSE≈0.0844,concluído
+11,Avaliação inicial GRU,resultado contaminado por escala incorreta,corrigido
+11A–11D,Auditoria numérica GRU,localizado bug de imputação/padronização,corrigido
+11E,Reconstrução correta da avaliação,"115 janelas, imputação baseada no treino saudável",concluído
+12B,Avaliação GRU corrigida,MSE pós-miss≈19.42; pré-transição≈2.39,concluído
+13,Evolução temporal do erro,slope global contaminado por pre-entry,limitado
+13A,Tendência in-flight,GRU MSE slope≈0.237; r≈0.812,exploratório
+14,Decomposição por feature,pré-miss dominado por sinais cinemáticos,exploratório
+15,GRU × baselines simples,GRU não demonstra vantagem clara,exploratório
+16,GRU × sinais cinemáticos,R² descritivo≈0.902 com variabilidade cinemática,exploratório
+17,GRU × distância ao regime saudável,r≈0.856; distância simples tem tendência mais forte,exploratório
+18,Teste de ordem temporal,"shuffle aumenta MSE in-flight, mas efeito moderado",exploratório

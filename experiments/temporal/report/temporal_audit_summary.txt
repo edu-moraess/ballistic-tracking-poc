@@ -1,0 +1,47 @@
+TEMPORAL AUDIT — EXECUTIVE SUMMARY
+===================================
+
+Dataset:
+130 frames
+First miss: frame 79
+Stable reference: 41-78
+Pre-transition: 69-78
+
+Temporal model:
+GRU Autoencoder
+T=10
+7 features
+19 healthy training sequences
+9,495 parameters
+
+Key results:
+GRU train MSE: 0.0844
+Pre-transition MSE: 2.385
+Post-first-miss mean MSE: 19.42
+
+In-flight GRU trend:
+slope = 0.2371
+correlation = 0.8120
+
+GRU vs healthy-distance:
+correlation = 0.8557
+
+Healthy-distance vs frame:
+correlation = 0.9849
+
+Temporal shuffle:
+original MSE = 1.9578
+shuffled MSE = 2.2040
+mean delta = +0.2462
+
+Conclusion:
+The GRU detects temporal change associated with degradation.
+However, no robust early-warning capability or superiority over
+simple statistical/kinematic baselines was demonstrated.
+
+The temporal-order experiment provides exploratory evidence that
+sequence order contributes information, but the effect is moderate
+and inconsistent.
+
+Final status:
+EXPLORATORY EVIDENCE — NO ROBUST EARLY-WARNING CLAIM.
