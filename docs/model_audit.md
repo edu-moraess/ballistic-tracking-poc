@@ -10,8 +10,8 @@
 
 ## Dataset
 
-- Frames directory: `data/yolo_dataset/images/train`
-- Frames available: `NOT AVAILABLE`
+- Frames directory: `local Photron frames dir (via --frames-dir)`
+- Frames available: `130`
 - Expected sequence: 130 Photron frames, naturally sorted
 - Annotation source: reference labels/auto-labels documented in docs/pseudo_labeling.md
 
@@ -19,13 +19,13 @@
 
 | Confidence | Detected | Missed | Detection Rate |
 |---:|---:|---:|---:|
-| 0.25 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
-| 0.5 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
-| 0.75 | NOT AVAILABLE | NOT AVAILABLE | NOT AVAILABLE |
+| 0.25 | 71 | 59 | 0.5462 |
+| 0.5 | 63 | 67 | 0.4846 |
+| 0.75 | 8 | 122 | 0.0615 |
 
 ## Missed Frames
 
-NOT AVAILABLE
+frame_000.png, frame_001.png, frame_002.png, frame_003.png, frame_004.png, frame_005.png, frame_006.png, frame_007.png, frame_008.png, frame_009.png, frame_010.png, frame_011.png, frame_012.png, frame_013.png, frame_014.png, frame_015.png, frame_016.png, frame_017.png, frame_018.png, frame_019.png, frame_020.png, frame_021.png, frame_022.png, frame_023.png, frame_024.png, frame_025.png, frame_026.png, frame_027.png, frame_028.png, frame_029.png, frame_030.png, frame_031.png, frame_032.png, frame_033.png, frame_034.png, frame_035.png, frame_036.png, frame_039.png, frame_040.png, frame_041.png, frame_042.png, frame_043.png, frame_044.png, frame_045.png, frame_047.png, frame_048.png, frame_049.png, frame_050.png, frame_051.png, frame_052.png, frame_053.png, frame_054.png, frame_057.png, frame_058.png, frame_059.png, frame_060.png, frame_061.png, frame_062.png, frame_065.png, frame_066.png, frame_067.png, frame_068.png, frame_069.png, frame_070.png, frame_071.png, frame_072.png, frame_074.png, frame_075.png, frame_076.png, frame_077.png, frame_078.png, frame_079.png, frame_080.png, frame_081.png, frame_082.png, frame_083.png, frame_084.png, frame_085.png, frame_086.png, frame_087.png, frame_088.png, frame_089.png, frame_090.png, frame_091.png, frame_092.png, frame_093.png, frame_094.png, frame_095.png, frame_096.png, frame_097.png, frame_098.png, frame_099.png, frame_100.png, frame_101.png, frame_102.png, frame_103.png, frame_104.png, frame_105.png, frame_106.png, frame_107.png, frame_108.png, frame_109.png, frame_110.png, frame_111.png, frame_112.png, frame_113.png, frame_114.png, frame_115.png, frame_116.png, frame_117.png, frame_118.png, frame_119.png, frame_120.png, frame_121.png, frame_122.png, frame_123.png, frame_124.png, frame_125.png, frame_126.png, frame_127.png, frame_128.png, frame_129.png
 
 ## Multiple Detection Frames
 
@@ -34,6 +34,12 @@ NOT AVAILABLE
 ## Confidence Distribution
 
 Per-frame confidence statistics are stored in `artifacts/model_audit/summary.json`. They are reported only when the real frame sequence is available.
+
+| Threshold | Mean | Median | Min | Max |
+|---:|---:|---:|---:|---:|
+| 0.25 | 0.6385 | 0.6647 | 0.2730 | 0.8047 |
+| 0.50 | 0.6727 | 0.6754 | 0.5031 | 0.8047 |
+| 0.75 | 0.7790 | 0.7754 | 0.7595 | 0.8047 |
 
 ## Localization
 
