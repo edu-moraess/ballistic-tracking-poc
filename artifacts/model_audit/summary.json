@@ -1,0 +1,12 @@
+{
+  "status": "NOT RUN",
+  "reason": "Frames directory does not exist: data/yolo_dataset/images/train",
+  "model_path": "models/best.pt",
+  "frame_count": 0,
+  "thresholds": [
+    0.25,
+    0.5,
+    0.75
+  ],
+  "by_threshold": {}
+}
