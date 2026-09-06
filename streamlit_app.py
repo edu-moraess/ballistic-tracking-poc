@@ -1,14 +1,4 @@
-"""
-Ballistic Tracking — Sequence Explorer (visualization only).
-
-Primary source: upload of any .zip archive containing Photron PNG/JPG frames.
-Images are discovered recursively inside the archive (no local filesystem scan).
-
-Mobile-friendly upload: validates ZIP by magic bytes (not only file extension).
-
-This app does not train YOLO, does not run the Kalman filter, and does not
-modify experimental results.
-"""
+"""Ballistic Tracking — Sequence Explorer (visualization only)."""
 
 from __future__ import annotations
 
@@ -21,95 +11,129 @@ import streamlit as st
 from PIL import Image
 
 # ---------------------------------------------------------------------------
-# Page / theme
+# Page / futuristic visual theme
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Ballistic Tracking — Sequence Explorer",
-    page_icon="🎞️",
+    page_title="BALLISTIC TRACKING // SEQUENCE EXPLORER",
+    page_icon="◈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
     """
     <style>
-    .stApp { background-color: #0e1117; color: #e6e6e6; }
-    section[data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
+    :root {
+        --bg: #05070b;
+        --panel: #0b1018;
+        --panel2: #0f1621;
+        --line: #1d3445;
+        --text: #e8f1f7;
+        --muted: #78909f;
+        --accent: #39e6c5;
     }
-    h1, h2, h3, h4 { color: #f0f6fc !important; }
+    .stApp {
+        background:
+            radial-gradient(circle at 50% -10%, rgba(34, 122, 137, .18), transparent 35%),
+            linear-gradient(180deg, #05070b 0%, #070b11 55%, #05070b 100%);
+        color: var(--text);
+    }
+    [data-testid="stHeader"] { background: transparent; }
+    .block-container { max-width: 1500px; padding-top: 2rem; }
+    h1, h2, h3, h4 { color: var(--text) !important; letter-spacing: .04em; }
+    .hero {
+        border: 1px solid var(--line);
+        background: linear-gradient(135deg, rgba(12,22,31,.96), rgba(7,11,17,.96));
+        border-radius: 18px;
+        padding: 28px 30px 24px;
+        margin-bottom: 18px;
+        box-shadow: 0 0 45px rgba(24, 180, 170, .07), inset 0 1px 0 rgba(255,255,255,.025);
+    }
+    .eyebrow { color: var(--accent); font-size: .72rem; letter-spacing: .22em; font-weight: 700; }
+    .hero-title { font-size: clamp(1.65rem, 4vw, 3rem); font-weight: 800; margin: 5px 0; letter-spacing: .08em; }
+    .hero-sub { color: var(--muted); font-size: .9rem; }
+    .status {
+        display: inline-block; border: 1px solid #245f59; color: var(--accent);
+        background: rgba(35, 170, 150, .08); border-radius: 999px;
+        padding: 5px 11px; font-size: .72rem; letter-spacing: .08em;
+    }
+    .upload-box {
+        border: 1px dashed #2a5665; background: rgba(8,18,26,.8);
+        border-radius: 16px; padding: 10px; margin: 12px 0 22px;
+    }
     .metric-card {
-        background: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
+        background: linear-gradient(145deg, var(--panel2), var(--panel));
+        border: 1px solid var(--line); border-radius: 14px;
+        padding: 16px; min-height: 92px; margin-bottom: 12px;
     }
-    .frame-caption {
-        font-size: 0.72rem;
-        color: #8b949e;
-        text-align: center;
-        margin-top: 0.15rem;
+    .metric-label { color: var(--muted); font-size: .68rem; letter-spacing: .14em; }
+    .metric-value { color: var(--text); font-size: 1.25rem; font-weight: 700; margin-top: 5px; }
+    .frame-caption { font-size: .68rem; color: #78909f; text-align: center; margin: 3px 0 10px; }
+    div[data-testid="stFileUploader"] {
+        background: rgba(9,16,24,.72); border: 1px solid #1d3445;
+        border-radius: 12px; padding: 8px;
     }
-    div[data-testid="stAlert"] {
-        background-color: #21262d;
-        border: 1px solid #30363d;
+    div[data-testid="stFileUploaderDropzone"] { background: transparent; }
+    button[kind="secondary"] { border-color: #244554; }
+    .media-title { color: var(--accent); font-size: .72rem; letter-spacing: .18em; font-weight: 700; }
+    @media (max-width: 700px) {
+        .block-container { padding: 1rem .75rem 2rem; }
+        .hero { padding: 20px 18px; border-radius: 14px; }
+        .hero-sub { font-size: .78rem; }
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("BALLISTIC TRACKING PoC")
-st.subheader("Sequence Explorer")
-st.caption("Computer Vision × State Estimation · visualization only")
+st.markdown(
+    """
+    <div class="hero">
+      <div class="eyebrow">COMPUTER VISION × STATE ESTIMATION</div>
+      <div class="hero-title">BALLISTIC TRACKING</div>
+      <div class="hero-sub">SEQUENCE EXPLORER // VISUALIZATION CONSOLE</div>
+      <br>
+      <span class="status">● LOCAL MEDIA MODE</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ---------------------------------------------------------------------------
-# Helpers (string-based; no filesystem dependency for ZIP contents)
+# Media helpers
 # ---------------------------------------------------------------------------
-IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".webm", ".mkv", ".mpeg", ".mpg")
 
 
 def _basename(member_name: str) -> str:
-    """Return file basename from a zip member path (handles / and \\)."""
     name = member_name.replace("\\", "/")
     if name.endswith("/"):
         name = name[:-1]
-    if "/" in name:
-        name = name.rsplit("/", 1)[-1]
-    return name
-
-
-def _is_image_member(member_name: str) -> bool:
-    base = _basename(member_name).lower()
-    return base.endswith(IMAGE_EXTENSIONS)
+    return name.rsplit("/", 1)[-1]
 
 
 def _is_skippable_member(member_name: str) -> bool:
-    """Directories, macOS metadata, hidden files."""
     norm = member_name.replace("\\", "/")
     if not norm or norm.endswith("/"):
         return True
     if norm.startswith("__MACOSX/") or "/__MACOSX/" in norm:
         return True
     base = _basename(norm)
-    if not base or base.startswith(".") or base.startswith("._"):
-        return True
-    return False
+    return not base or base.startswith(".") or base.startswith("._")
+
+
+def _is_image_member(member_name: str) -> bool:
+    return _basename(member_name).lower().endswith(IMAGE_EXTENSIONS)
 
 
 def natural_frame_key(name: str) -> Tuple[int, str]:
-    """frame_012.png → (12, name); names without digits sort last."""
     stem = name.rsplit(".", 1)[0] if "." in name else name
     m = re.search(r"(\d+)", stem)
-    if m:
-        return (int(m.group(1)), name.lower())
-    return (10**9, name.lower())
+    return (int(m.group(1)), name.lower()) if m else (10**9, name.lower())
 
 
 def _validate_image_bytes(data: bytes) -> bool:
-    """Return True if data is a readable raster image."""
     if not data or len(data) < 24:
         return False
     try:
@@ -123,121 +147,64 @@ def _validate_image_bytes(data: bytes) -> bool:
 
 
 def _looks_like_zip(data: bytes) -> bool:
-    """ZIP local-file or empty-archive magic numbers."""
-    if len(data) < 4:
-        return False
-    # PK\x03\x04 (file), PK\x05\x06 (empty), PK\x07\x08 (spanned)
-    return data[0:2] == b"PK"
+    return len(data) >= 4 and data[:2] == b"PK"
 
 
-@st.cache_data(show_spinner="Extracting ZIP…", ttl=3600)
+@st.cache_data(show_spinner="Reading sequence…", ttl=3600)
 def load_frames_from_zip(zip_bytes: bytes) -> Tuple[List[Tuple[str, bytes]], Dict[str, int]]:
-    """
-    Read any ZIP from bytes and collect valid PNG/JPG/JPEG members recursively.
-
-    Returns (frames, stats) with frames sorted frame_000 → frame_129.
-    """
     stats: Dict[str, int] = {
-        "members_total": 0,
-        "skipped_meta": 0,
-        "candidates": 0,
-        "unreadable": 0,
-        "duplicates": 0,
-        "loaded": 0,
-        "bytes": len(zip_bytes),
+        "members_total": 0, "skipped_meta": 0, "candidates": 0,
+        "unreadable": 0, "duplicates": 0, "loaded": 0, "bytes": len(zip_bytes),
     }
-
     if not zip_bytes:
-        raise ValueError("ZIP_EMPTY: o arquivo enviado está vazio (0 bytes).")
-
+        raise ValueError("ZIP_EMPTY: o arquivo enviado está vazio.")
     if not _looks_like_zip(zip_bytes):
-        raise ValueError(
-            "ZIP_OPEN_FAILED: o conteúdo recebido não parece um arquivo ZIP "
-            f"(magic={zip_bytes[:4]!r}, tamanho={len(zip_bytes)} bytes). "
-            "No celular, apague o item vermelho, confirme o Wi‑Fi e envie "
-            "de novo um único photron_frames.zip."
-        )
-
+        raise ValueError("ZIP_OPEN_FAILED: o conteúdo recebido não parece um ZIP.")
     try:
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
     except zipfile.BadZipFile as exc:
-        raise ValueError(
-            f"ZIP_OPEN_FAILED: não foi possível abrir como ZIP ({exc}). "
-            f"Bytes recebidos={len(zip_bytes)}. "
-            "Upload incompleto é comum em redes móveis — tente novamente no Wi‑Fi."
-        ) from exc
-    except Exception as exc:
-        raise ValueError(
-            f"ZIP_OPEN_FAILED: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise ValueError(f"ZIP_OPEN_FAILED: arquivo ZIP inválido ou incompleto ({exc}).") from exc
 
     try:
         bad = zf.testzip()
         if bad is not None:
-            raise ValueError(
-                f"ZIP_CORRUPT: entrada corrompida no ZIP: {bad}."
-            )
+            raise ValueError(f"ZIP_CORRUPT: entrada corrompida: {bad}")
     except ValueError:
         raise
     except Exception:
         pass
 
     frames: List[Tuple[str, bytes]] = []
-    seen: set = set()
-    sample_members: List[str] = []
-
+    seen = set()
     for info in zf.infolist():
         stats["members_total"] += 1
         member = info.filename
-
-        if len(sample_members) < 12:
-            sample_members.append(member)
-
         if info.is_dir() or _is_skippable_member(member):
             stats["skipped_meta"] += 1
             continue
-
         if not _is_image_member(member):
             continue
-
         stats["candidates"] += 1
         base = _basename(member)
-
         if base in seen:
             stats["duplicates"] += 1
             continue
-
         try:
             data = zf.read(info)
         except Exception:
             stats["unreadable"] += 1
             continue
-
         if not _validate_image_bytes(data):
             stats["unreadable"] += 1
             continue
-
         seen.add(base)
         frames.append((base, data))
         stats["loaded"] += 1
 
     if not frames:
-        sample = ", ".join(repr(m) for m in sample_members[:8])
         if stats["candidates"] == 0:
-            raise ValueError(
-                "ZIP_NO_IMAGES: o ZIP abriu, mas nenhuma entrada "
-                ".png/.jpg/.jpeg foi encontrada. "
-                f"Membros={stats['members_total']}, "
-                f"meta={stats['skipped_meta']}. "
-                f"Exemplos: [{sample}]. "
-                "Envie o ZIP das frames Photron, não o ZIP do repositório GitHub."
-            )
-        raise ValueError(
-            "ZIP_UNREADABLE_IMAGES: candidatas encontradas, mas nenhuma "
-            "foi legível pelo PIL. "
-            f"candidatas={stats['candidates']}, ilegíveis={stats['unreadable']}."
-        )
-
+            raise ValueError("ZIP_NO_IMAGES: nenhuma imagem PNG/JPG/JPEG foi encontrada no ZIP.")
+        raise ValueError("ZIP_UNREADABLE_IMAGES: as imagens encontradas não puderam ser lidas.")
     frames.sort(key=lambda item: natural_frame_key(item[0]))
     return frames, stats
 
@@ -252,163 +219,159 @@ def make_thumbnail(image: Image.Image, max_width: int) -> Image.Image:
     if image.width <= max_width:
         return image
     ratio = max_width / float(image.width)
-    size = (max_width, max(1, int(image.height * ratio)))
-    return image.resize(size, Image.Resampling.BILINEAR)
+    return image.resize((max_width, max(1, int(image.height * ratio))), Image.Resampling.BILINEAR)
+
+
+def detect_media_kind(name: str, data: bytes) -> str:
+    """Prefer content signatures so mobile browsers can rename files."""
+    lower = (name or "").lower()
+    if _looks_like_zip(data):
+        return "zip"
+    if data.startswith(b"\x89PNG") or data.startswith(b"\xff\xd8\xff") or data.startswith(b"RIFF"):
+        # RIFF can be WEBP; still an image if PIL can decode it.
+        if _validate_image_bytes(data):
+            return "image"
+    if data.startswith(b"\x00\x00\x00") and b"ftyp" in data[:64]:
+        return "video"
+    if data.startswith(b"\x1aE\xdf\xa3"):
+        return "video"
+    if any(lower.endswith(ext) for ext in IMAGE_EXTENSIONS):
+        return "image"
+    if any(lower.endswith(ext) for ext in VIDEO_EXTENSIONS):
+        return "video"
+    if _validate_image_bytes(data):
+        return "image"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
-# Source: ZIP upload (mobile-friendly)
+# Direct main-screen upload — images, ZIPs and videos
 # ---------------------------------------------------------------------------
-st.sidebar.header("Source")
-
-st.sidebar.caption(
-    "Celular: envie **um** arquivo só, no Wi‑Fi se possível. "
-    "Apague itens vermelhos antes de tentar de novo."
-)
-
-# No strict extension filter — some mobile browsers report odd MIME types.
-# We validate ZIP content ourselves via magic bytes + zipfile.
-uploaded_zip = st.sidebar.file_uploader(
-    "Upload ZIP with frames",
+st.markdown('<div class="media-title">MEDIA INPUT</div>', unsafe_allow_html=True)
+st.markdown('<div class="upload-box">', unsafe_allow_html=True)
+uploads = st.file_uploader(
+    "Arraste arquivos para cá ou toque em Procurar arquivos",
     type=None,
-    accept_multiple_files=False,
-    help=(
-        "Arquivo ZIP com frame_000.png … frame_129.png. "
-        "No celular: um arquivo por vez, preferencialmente no Wi‑Fi."
-    ),
+    accept_multiple_files=True,
+    help="Aceita imagens soltas, ZIPs com frames e vídeos. O conteúdo é validado pelo app.",
 )
+st.markdown('</div>', unsafe_allow_html=True)
 
-frames: List[Tuple[str, bytes]] = []
-source_label = "none"
-load_error: Optional[str] = None
-stats: Dict[str, int] = {}
-
-if uploaded_zip is not None:
-    try:
-        # Read once into memory; show size for mobile debugging
-        zip_bytes = uploaded_zip.getvalue()
-        size_mb = len(zip_bytes) / (1024 * 1024)
-        st.sidebar.write(
-            f"Recebido: `{uploaded_zip.name}` · **{size_mb:.2f} MB** "
-            f"({len(zip_bytes)} bytes)"
-        )
-
-        if len(zip_bytes) < 100:
-            raise ValueError(
-                "ZIP_EMPTY: upload parece incompleto "
-                f"({len(zip_bytes)} bytes). Apague o item e envie de novo."
-            )
-
-        # Soft warning if name has no .zip (mobile sometimes strips / renames)
-        name_lower = (uploaded_zip.name or "").lower()
-        if name_lower and not (
-            name_lower.endswith(".zip")
-            or name_lower.endswith(".png")
-            or _looks_like_zip(zip_bytes)
-        ):
-            st.sidebar.warning(
-                "O arquivo não tem extensão .zip; tentando abrir mesmo assim…"
-            )
-
-        frames, stats = load_frames_from_zip(zip_bytes)
-        source_label = f"ZIP · {uploaded_zip.name}"
-    except ValueError as exc:
-        load_error = str(exc)
-    except Exception as exc:
-        load_error = f"ZIP_ERROR: {type(exc).__name__}: {exc}"
-
-if load_error:
-    st.error(load_error)
-    st.warning(
-        "Dica (celular): remova os arquivos com ícone vermelho (X) → "
-        "conecte no Wi‑Fi → envie **apenas um** `photron_frames.zip` → "
-        "aguarde o upload terminar antes de tocar na tela."
-    )
-
-if not frames:
-    st.info(
-        "Faça upload do ZIP **das frames Photron** na barra lateral.\n\n"
-        "O arquivo deve conter `frame_000.png` … `frame_129.png`.\n\n"
-        "**Não** envie o ZIP do repositório GitHub (`ballistic-tracking-poc.zip`).\n\n"
-        "No **celular**: um arquivo por vez, no Wi‑Fi, e apague itens vermelhos "
-        "antes de reenviar."
-    )
+if not uploads:
+    st.info("Nenhuma mídia carregada. Envie PNG/JPG, um ZIP de frames ou um vídeo para iniciar a visualização.")
     st.stop()
 
-st.success(f"✓ {len(frames)} frames loaded")
-if uploaded_zip is not None:
-    st.caption(
-        f"Archive: `{uploaded_zip.name}` · "
-        f"images: {len(frames)} · "
-        f"members scanned: {stats.get('members_total', '?')} · "
-        f"bytes: {stats.get('bytes', '?')}"
-    )
-st.sidebar.caption(f"Source: {source_label}")
+all_frames: List[Tuple[str, bytes]] = []
+videos: List[Tuple[str, bytes]] = []
+unknown: List[str] = []
+zip_sources: List[str] = []
+
+for uploaded in uploads:
+    data = uploaded.getvalue()
+    kind = detect_media_kind(uploaded.name, data)
+    if kind == "zip":
+        try:
+            frames, stats = load_frames_from_zip(data)
+            all_frames.extend(frames)
+            zip_sources.append(f"{uploaded.name} · {len(frames)} frames")
+        except ValueError as exc:
+            st.error(f"{uploaded.name}: {exc}")
+    elif kind == "image":
+        if _validate_image_bytes(data):
+            all_frames.append((_basename(uploaded.name), data))
+        else:
+            unknown.append(uploaded.name)
+    elif kind == "video":
+        videos.append((uploaded.name, data))
+    else:
+        unknown.append(uploaded.name)
+
+# De-duplicate image names while preserving order, then sort numeric frame names.
+seen_names = set()
+unique_frames = []
+for name, data in all_frames:
+    key = (name.lower(), len(data))
+    if key not in seen_names:
+        seen_names.add(key)
+        unique_frames.append((name, data))
+all_frames = sorted(unique_frames, key=lambda item: natural_frame_key(item[0]))
+
+if unknown:
+    st.warning("Não foi possível identificar: " + ", ".join(unknown))
 
 # ---------------------------------------------------------------------------
-# Frame selection
+# Status strip
 # ---------------------------------------------------------------------------
-st.sidebar.header("Frame selector")
-selected_index = (
-    st.sidebar.slider(
+stat_cols = st.columns(4)
+metrics = [
+    ("FRAMES", str(len(all_frames))),
+    ("VIDEOS", str(len(videos))),
+    ("SOURCES", str(len(uploads))),
+    ("MODE", "VISUAL"),
+]
+for col, (label, value) in zip(stat_cols, metrics):
+    with col:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-label">{label}</div>'
+            f'<div class="metric-value">{value}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+if zip_sources:
+    st.caption("ZIP sources: " + " · ".join(zip_sources))
+
+# ---------------------------------------------------------------------------
+# Video viewer
+# ---------------------------------------------------------------------------
+for video_name, video_bytes in videos:
+    st.markdown(f'<div class="media-title">VIDEO // {video_name}</div>', unsafe_allow_html=True)
+    st.video(video_bytes)
+
+# ---------------------------------------------------------------------------
+# Image sequence viewer
+# ---------------------------------------------------------------------------
+if all_frames:
+    st.markdown('<div class="media-title">FRAME VIEWER</div>', unsafe_allow_html=True)
+    selected_index = st.slider(
         "Frame",
         min_value=1,
-        max_value=len(frames),
-        value=min(max(1, (len(frames) + 1) // 2), len(frames)),
-    )
-    - 1
-)
+        max_value=len(all_frames),
+        value=min(max(1, (len(all_frames) + 1) // 2), len(all_frames)),
+        label_visibility="collapsed",
+    ) - 1
 
-name, raw = frames[selected_index]
-image = decode_image(raw)
+    name, raw = all_frames[selected_index]
+    image = decode_image(raw)
+    col_img, col_meta = st.columns([3, 1])
+    with col_img:
+        st.markdown(f"### FRAME {selected_index + 1:03d} / {len(all_frames)}")
+        st.image(image, caption=name, use_container_width=True)
+    with col_meta:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-label">SELECTED FRAME</div>'
+            f'<div class="metric-value">{selected_index + 1:03d}</div></div>'
+            f'<div class="metric-card"><div class="metric-label">FILE</div>'
+            f'<div class="metric-value" style="font-size:.85rem;word-break:break-all">{name}</div></div>'
+            f'<div class="metric-card"><div class="metric-label">RESOLUTION</div>'
+            f'<div class="metric-value">{image.width} × {image.height}</div></div>',
+            unsafe_allow_html=True,
+        )
 
-# ---------------------------------------------------------------------------
-# Selected frame (large)
-# ---------------------------------------------------------------------------
-col_img, col_meta = st.columns([3, 1])
-
-with col_img:
-    st.markdown(f"### FRAME {selected_index + 1:03d} / {len(frames)}")
-    st.image(image, caption=name, use_container_width=True)
-
-with col_meta:
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown("**Metadata**")
-    st.write(f"**Frame:** `{selected_index + 1} / {len(frames)}`")
-    st.write(f"**File:** `{name}`")
-    st.write(f"**Resolution:** `{image.width} × {image.height}`")
-    st.write(f"**Total frames:** `{len(frames)}`")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------------
-# Sequence grid
-# ---------------------------------------------------------------------------
-st.markdown("---")
-st.markdown("### SEQUENCE")
-st.caption("Thumbnails ordered by frame number (`frame_000` → `frame_129`).")
-
-columns = st.sidebar.slider("Grid columns", 4, 12, 8)
-thumb_w = st.sidebar.slider("Thumbnail width", 60, 200, 100)
-
-for start in range(0, len(frames), columns):
-    row = frames[start : start + columns]
-    cols = st.columns(columns)
-    for col, (fname, fbytes) in zip(cols, row):
-        with col:
-            try:
-                thumb = make_thumbnail(decode_image(fbytes), thumb_w)
-                st.image(thumb, width=thumb_w)
-            except Exception:
-                st.write("—")
-            m = re.search(r"(\d+)", fname.rsplit(".", 1)[0])
-            label = f"{int(m.group(1)):03d}" if m else fname
-            st.markdown(
-                f'<p class="frame-caption">[{label}]</p>',
-                unsafe_allow_html=True,
-            )
+    st.markdown("---")
+    st.markdown('<div class="media-title">SEQUENCE // ALL FRAMES</div>', unsafe_allow_html=True)
+    grid_columns = min(8, max(3, len(all_frames)))
+    for start in range(0, len(all_frames), grid_columns):
+        row = all_frames[start:start + grid_columns]
+        cols = st.columns(grid_columns)
+        for col, (fname, fbytes) in zip(cols, row):
+            with col:
+                thumb = make_thumbnail(decode_image(fbytes), 150)
+                st.image(thumb, use_container_width=True)
+                m = re.search(r"(\d+)", fname.rsplit(".", 1)[0])
+                label = f"{int(m.group(1)):03d}" if m else fname
+                st.markdown(f'<p class="frame-caption">[{label}]</p>', unsafe_allow_html=True)
 
 st.divider()
 st.caption(
-    "Visualization only · scientific code (`src/`), weights (`models/best.pt`) "
-    "and experimental results remain unchanged."
+    "VISUALIZATION ONLY · YOLO, Kalman, training code, weights and experimental results are not modified or executed here."
 )
