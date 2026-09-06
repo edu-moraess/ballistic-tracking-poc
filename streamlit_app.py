@@ -5,14 +5,11 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import streamlit as st
 from PIL import Image
 
-# ---------------------------------------------------------------------------
-# Page / futuristic visual theme
-# ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="BALLISTIC TRACKING // SEQUENCE EXPLORER",
     page_icon="◈",
@@ -27,14 +24,14 @@ st.markdown(
         --bg: #05070b;
         --panel: #0b1018;
         --panel2: #0f1621;
-        --line: #1d3445;
+        --line: #26384f;
         --text: #e8f1f7;
         --muted: #78909f;
-        --accent: #39e6c5;
+        --accent: #5aa9ff;
     }
     .stApp {
         background:
-            radial-gradient(circle at 50% -10%, rgba(34, 122, 137, .18), transparent 35%),
+            radial-gradient(circle at 50% -10%, rgba(52, 108, 180, .18), transparent 35%),
             linear-gradient(180deg, #05070b 0%, #070b11 55%, #05070b 100%);
         color: var(--text);
     }
@@ -47,18 +44,18 @@ st.markdown(
         border-radius: 18px;
         padding: 28px 30px 24px;
         margin-bottom: 18px;
-        box-shadow: 0 0 45px rgba(24, 180, 170, .07), inset 0 1px 0 rgba(255,255,255,.025);
+        box-shadow: 0 0 45px rgba(50, 110, 190, .10), inset 0 1px 0 rgba(255,255,255,.025);
     }
     .eyebrow { color: var(--accent); font-size: .72rem; letter-spacing: .22em; font-weight: 700; }
     .hero-title { font-size: clamp(1.65rem, 4vw, 3rem); font-weight: 800; margin: 5px 0; letter-spacing: .08em; }
     .hero-sub { color: var(--muted); font-size: .9rem; }
     .status {
-        display: inline-block; border: 1px solid #245f59; color: var(--accent);
-        background: rgba(35, 170, 150, .08); border-radius: 999px;
+        display: inline-block; border: 1px solid #315b86; color: var(--accent);
+        background: rgba(64, 130, 210, .09); border-radius: 999px;
         padding: 5px 11px; font-size: .72rem; letter-spacing: .08em;
     }
     .upload-box {
-        border: 1px dashed #2a5665; background: rgba(8,18,26,.8);
+        border: 1px dashed #31577d; background: rgba(8,18,26,.8);
         border-radius: 16px; padding: 10px; margin: 12px 0 22px;
     }
     .metric-card {
@@ -70,11 +67,11 @@ st.markdown(
     .metric-value { color: var(--text); font-size: 1.25rem; font-weight: 700; margin-top: 5px; }
     .frame-caption { font-size: .68rem; color: #78909f; text-align: center; margin: 3px 0 10px; }
     div[data-testid="stFileUploader"] {
-        background: rgba(9,16,24,.72); border: 1px solid #1d3445;
+        background: rgba(9,16,24,.72); border: 1px solid #26384f;
         border-radius: 12px; padding: 8px;
     }
     div[data-testid="stFileUploaderDropzone"] { background: transparent; }
-    button[kind="secondary"] { border-color: #244554; }
+    button[kind="secondary"] { border-color: #31516d; }
     .media-title { color: var(--accent); font-size: .72rem; letter-spacing: .18em; font-weight: 700; }
     @media (max-width: 700px) {
         .block-container { padding: 1rem .75rem 2rem; }
@@ -99,9 +96,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------------------------
-# Media helpers
-# ---------------------------------------------------------------------------
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".webm", ".mkv", ".mpeg", ".mpg")
 
@@ -228,7 +222,6 @@ def detect_media_kind(name: str, data: bytes) -> str:
     if _looks_like_zip(data):
         return "zip"
     if data.startswith(b"\x89PNG") or data.startswith(b"\xff\xd8\xff") or data.startswith(b"RIFF"):
-        # RIFF can be WEBP; still an image if PIL can decode it.
         if _validate_image_bytes(data):
             return "image"
     if data.startswith(b"\x00\x00\x00") and b"ftyp" in data[:64]:
@@ -244,9 +237,6 @@ def detect_media_kind(name: str, data: bytes) -> str:
     return "unknown"
 
 
-# ---------------------------------------------------------------------------
-# Direct main-screen upload — images, ZIPs and videos
-# ---------------------------------------------------------------------------
 st.markdown('<div class="media-title">MEDIA INPUT</div>', unsafe_allow_html=True)
 st.markdown('<div class="upload-box">', unsafe_allow_html=True)
 uploads = st.file_uploader(
@@ -286,7 +276,6 @@ for uploaded in uploads:
     else:
         unknown.append(uploaded.name)
 
-# De-duplicate image names while preserving order, then sort numeric frame names.
 seen_names = set()
 unique_frames = []
 for name, data in all_frames:
@@ -299,9 +288,6 @@ all_frames = sorted(unique_frames, key=lambda item: natural_frame_key(item[0]))
 if unknown:
     st.warning("Não foi possível identificar: " + ", ".join(unknown))
 
-# ---------------------------------------------------------------------------
-# Status strip
-# ---------------------------------------------------------------------------
 stat_cols = st.columns(4)
 metrics = [
     ("FRAMES", str(len(all_frames))),
@@ -320,16 +306,10 @@ for col, (label, value) in zip(stat_cols, metrics):
 if zip_sources:
     st.caption("ZIP sources: " + " · ".join(zip_sources))
 
-# ---------------------------------------------------------------------------
-# Video viewer
-# ---------------------------------------------------------------------------
 for video_name, video_bytes in videos:
     st.markdown(f'<div class="media-title">VIDEO // {video_name}</div>', unsafe_allow_html=True)
     st.video(video_bytes)
 
-# ---------------------------------------------------------------------------
-# Image sequence viewer
-# ---------------------------------------------------------------------------
 if all_frames:
     st.markdown('<div class="media-title">FRAME VIEWER</div>', unsafe_allow_html=True)
     selected_index = st.slider(
